@@ -1,0 +1,154 @@
+/********************************************************************
+ ** 
+ ** README
+ ** Authors: Jack Burns (jburns08) & Max Mitchell (mmitch07)
+ ** uarray2b.c a2plain.c ppmtrans.c
+ ** February 20, 2020
+ **
+ ******************************************************************/
+
+Compile/run: compile image transformations using "make ppmtrans"
+run with: ./ppmtrans [optional image filename] [optional -rotate or -flip]
+[optional degree of rotation or vertical/horizontal] [optional -row/col/block
+-major] [optional -time] [optional time filename].
+
+Acknowledgments: We recieved TA help from Ben Santaus, Danielle Lan, James
+Cameron, Imogen Eads, Grant Versfeld and Ella Bisbee.
+
+-------------------------------------------------------------------------------
+
+Implementations and Architecture:
+
+uarray2b.h - Interface for uarray2b
+
+uarray2b.c - This program was implemented correctly, in that it implements
+the functions from uarray2b.h. It can create a new object of type UArray2b_T
+that has a specified width and height, and either a blocksize specified in
+the arguments, or a default blocksize that is as large as possible for a whole
+block to fit in 64KB of ram. Program also returns the height, width, element
+size, and blocksize in the array, as well as freeing all allocated memory.
+Program also can iterate through the array in block order and call an apply
+function for every element
+
+uarray2b Architecture - In order to make a blocked 2D array, we created a
+struct called UArray2b_T. This contains information about the struct, which
+are the integer representations of the number of blocks in a row and in a
+column, the height and width of the array (or total number or rows and
+columns), the size in bytes of each element, the length of a block, and the
+amount of elements in each block. Lastly, the array is stored in a UArray2_T.
+The UArray2_T represents a 2D array of blocks. Each block is represented as
+a Uarray. Therefore, each block is its own 1D array, and those are stored in
+a larger 2D array.
+
+a2plain.c - This program was implemented correctly, in that we created static
+functions which implement functions from the supplied a2plain.h. These
+functions operate using the UArray2 interface, and work with 2D unblocked
+arrays. We also created a method suite that contiains pointers to all of
+these functins. Since a2plain only uses unblocked arrays, the pointer to the
+map_block_major function and the small_map_bock major function are NULL.
+
+a2plain.c Architecture - Most of the functions in this program make calls to
+UArray2 functions in order to set up, free, and return data from a 2D array
+represented as a UArray2_T. The method suite contains pointers to these
+functions, with NULL representing any functions in the A2Methods_T struct
+that are not used in a 2D unboxed array. For the map_default functions, we
+called the row_major function, becuase it was what we originally thought had
+the best locality. The exported pointer to the struct therefore contains
+pointers to all of the necessary functions for a 2D unboxed array.
+
+ppmtrans.c - This program was implemented correctly, as it parses through the
+command line, and sets the correct method suite based on what (if anthing) was
+specified. Additionally, the program opens up a file that is either specified
+in the command line, or from stdin. This file is then read in as a ppm using
+the supplied pnm.h. The program then maps the array of pixels using the
+already set map function, and, based on the specified rotation, calls one of
+the apply functions to perform the rotation, and print it to stdout.
+
+ppmtrans.c Architecture - The command line is parsed through the same way it
+is in the provided code. The methods are set from here to either use the plain
+uarray2 method suite or the blocked uarray2 method suite based on whether
+block-major was specified or not. the rotation, flip, and time file name are
+also set if specified. To perform the transformations, a new A2Methods_UArray2
+called 'rotated' is created. This represents the array in which the
+transformation will be copied to. Based on the rotation or flip variable, the
+Pnm_ppm is passed through the map function, and the correct apply function is
+called. Our apply functions finds the correct new row and new column indeces
+for the desired transformation, and copies the object pointer to the found
+index in the 'rotated' array. The fields in the Pnm_ppm struct can be directly
+accessed, so the pixel array of our Pnm_ppm is set to what 'rotated' is. The
+function Pnm_ppmwrite then prints this array in binary form to stdout, and
+memory is freed.
+
+-------------------------------------------------------------------------------
+
+CPU time:
+
+Machine used for testing - Halligan desktop Intel Core i7-7700T CPU @ 2.90GHz
+                         - clock rate  (cpu MHz) = 963.067
+
+Test one - Image height = 1603 pixels. Image width = 2856 pixels.
+
+** All time measured in nanoseconds **
+
+Top (longer) Number in every box = Total time for transformation.
+Bottom (shorter) Number in every box = Time per pixel.
+_______________________________________________________________________________
+        |90 degree    |180 degree   |270 degree   |Flip vert    |Flip hor     |
+-------------------------------------------------------------------------------
+Row maj | 162652098.0 | 136988289.0 | 181088359.0 | 131462985.0 | 132499811.0 |
+        |             |             |             |             |             |
+        | 35.527770   | 29.922076   | 39.554765   | 28.715115   | 28.941666   |
+-------------------------------------------------------------------------------
+Col maj | 140635027.0 | 188734767.0 | 146661133.0 | 189986854.0 | 183481924.0 |
+        |             |             |             |             |             |
+        | 30.718625   | 41.224954   | 32.034895   | 41.498445   | 40.077586   |
+-------------------------------------------------------------------------------
+Block   | 278731068.0 | 277718563.0 | 287030265.0 | 280042695.0 | 277582395.0 |
+maj     |             |             |             |             |             |
+        | 60.882665   | 60.661505   | 62.69542    | 61.169161   | 60.631763   |
+-------------------------------------------------------------------------------
+
+Analysis:
+
+The fastest average time for every rotation was from using row major mapping.
+This makes sense, because elements in the same row are next to each other in
+memory. For 180 degree rotations and flips, the array is read in row major
+order, and written to the new array in the same order. Therefore, there are
+more cache hits than col major when reading and writing, making it very fast.
+
+However, 90 degree and 270 degree rotations take longer times when using row
+major, since they are read in row order, but written in column order. Elements
+in the same column are not near each other in memory, and therefore produce
+cache misses making the writing time take longer.
+
+Column major mapping took a longer time than row major for 180 degree rotations
+and flips, because the pixel array was read in column major order, and written
+to the empty array in column major order. For 90 degrees and 270 degrees column
+major mapping was quicker, because the pixel array was read in column major
+order, but written to the empty array in row major order, which has better
+spatial locality.
+
+After much thought, we determined that the time difference between row major
+and column major mapping for 90 and 270 degree rotations was due to other
+factors in the processing chip, since both use row major mapping and column
+major mapping, one in reading and one in writing.
+
+The slowest average time for every rotation was from using block major mapping.
+Although in theory, block major should yield the fastest time, since every
+element in one block can fit into a cache block, it is still the slowest. We
+think this is due to the fact that the index within a block needs to be
+converted to the correct row and column index in the whole array. This involves
+several uses of modular arithmetic. Since the division operation takes a long
+cpu time, this adds up, to negate the speed gained from the efficient spatial
+locality.
+
+
+
+-------------------------------------------------------------------------------
+
+Total time spent on assignment: 29.6 hours.
+
+
+
+
+
